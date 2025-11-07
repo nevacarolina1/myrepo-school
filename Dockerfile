@@ -2,10 +2,10 @@
 FROM python:3.12
 
 # Membuat direktori kerja
-RUN mkdir -p /movies
+RUN mkdir -p /mydir
 
 # Set direktori kerja
-WORKDIR /movies
+WORKDIR /mydir
 
 # Menyalin semua file dari direktori saat ini ke dalam image
 COPY . .

@@ -1,0 +1,7 @@
+gunicorn
+watchdog
+m3u8
+https://github.com/KurimuzonAkuma/pyrogram/archive/dev.zip
+requests
+tgcrypto
+bs4

@@ -68,7 +68,7 @@ class Request:
         return Response(res.content)
 
 class OppaDrama: 
-    BASE_URL = base64.b64decode("aHR0cDovLzQ1LjExLjU3LjI0Mw==")
+    BASE_URL = base64.b64decode("aHR0cDovLzQ1LjExLjU3LjI0Mw==").decode()
     ADMIN_AJAX_URL = BASE_URL + "/wp-admin/admin-ajax.php"
 
     def __init__(self):

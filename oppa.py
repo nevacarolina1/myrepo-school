@@ -326,16 +326,3 @@ class OppaDrama:
 
 if __name__ == "__main__": 
     oppa = OppaDrama()
-    # result = oppa.search("alice in wonder")
-    # print(result)
-    # detail = oppa.post_details("http://45.11.57.243/alice-in-wonderland-2010/")
-    # print(detail)
-    # mv_detail = oppa.movie_details("http://45.11.57.243/movie-alice-in-wonderland-2010-bluray/")
-    # print(mv_detail)
-    # m3u8_data = oppa.playlist_filelions("https://smoothpre.com/v/qga3vvhzvcn8")
-    # print(m3u8_data)
-    # exit()
-    chunks = oppa.download_filelions("https://smoothpre.com/stream/So30lagxK8fwvkPrHdOyUw/hjkrhuihghfvu/1762589947/17653847/index-f3-v1-a1.m3u8", max_workers=16)
-    for chunk in chunks: 
-        pass
-    # print(content[0:100])

@@ -13,7 +13,7 @@ COPY . .
 # Instal dependensi dari requirements.txts
 RUN pip install --no-cache-dir -r requirements.txt
 RUN apt update -y
-RUN apt install ffmpeg
+RUN apt install ffmpeg -y
 
 # Menginformasikan Docker bahwa aplikasi mendengarkan pada port 80
 EXPOSE 3000

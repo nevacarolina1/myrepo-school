@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN apt update -y
 RUN apt install ffmpeg -y
 
+# Instal Node.js (menggunakan versi LTS terbaru)
+RUN curl -sL https://deb.nodesource.com/setup_lts.x | bash -  
+RUN apt install -y nodejs  
+
 # Menginformasikan Docker bahwa aplikasi mendengarkan pada port 80
 EXPOSE 3000
 

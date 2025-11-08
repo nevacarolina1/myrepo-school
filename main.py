@@ -9,7 +9,7 @@ import config
 
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import MessageNotModified
+from pyrogram.errors import MessageNotModified, FloodWait
 from oppa import OppaDrama
 
 
@@ -24,6 +24,24 @@ oppa = OppaDrama()
 
 user_session_data = {}
 
+# === FUNGSI BARU UNTUK MENANGANI FLOODWAIT SECARA OTOMATIS ===
+async def try_call(func, *args, **kwargs):
+    """
+    Mencoba memanggil fungsi Pyrogram dan menangani FloodWait secara otomatis.
+    """
+    while True:
+        try:
+            # Mencoba menjalankan fungsi (misal: client.send_video)
+            return await func(*args, **kwargs)
+        except FloodWait as e:
+            # Jika kena FloodWait, cetak pesan, tunggu, dan loop akan mencoba lagi
+            wait_time = e.value + 1 # Tambahkan 1 detik ekstra untuk keamanan
+            print(f"[FLOOD_WAIT] Terkena FloodWait. Menunggu {wait_time} detik...")
+            await asyncio.sleep(wait_time)
+        except Exception:
+            # Jika error lain, lemparkan kembali agar ditangani di tempat lain
+            raise
+            
 # --- Fungsi Helper (dengan pengecekan 50MB) ---
 async def upload_progress(current, total, p_args):
     # ... (fungsi ini tidak berubah)
@@ -91,40 +109,86 @@ async def download_progress_callback(client, message, finished, total, downloade
         await asyncio.sleep(5)
 
 async def process_and_send_video(client, chat_id, message_id, m3u8_url):
-    # ... (fungsi ini tidak berubah)
     temp_output_path = f"out_{int(time.time())}.mp4"
+    
     try:
-        loading_message = await client.get_messages(chat_id, message_id)
+        # Kita akan menggunakan wrapper untuk semua panggilan API yang berisiko
+        loading_message = await try_call(
+            client.get_messages,
+            chat_id,
+            message_id
+        )
+
         dl_progress = lambda f, t, b, st: asyncio.create_task(
             download_progress_callback(client, loading_message, f, t, b, st)
         )
+
         ffmpeg_cmd = ['ffmpeg', '-y', '-i', 'pipe:0', '-c', 'copy', '-movflags', '+faststart', temp_output_path]
         process = await asyncio.create_subprocess_exec(
-            *ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            *ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        
         download_generator = await asyncio.to_thread(
-            oppa.download_filelions, m3u8_url, max_workers=4, progress_callback=dl_progress)
+            oppa.download_filelions, m3u8_url, max_workers=8, progress_callback=dl_progress
+        )
+
+        # Mengalirkan data ke FFmpeg
         for video_chunk in download_generator:
             try:
                 process.stdin.write(video_chunk)
                 await process.stdin.drain()
             except (BrokenPipeError, ConnectionResetError): break
+        
         if not process.stdin.is_closing(): process.stdin.close()
+        
         stdout, stderr = await process.communicate()
-        if process.returncode != 0: raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd, stderr=stderr.decode())
-        await client.edit_message_text(text="⏳ (2/3) Mempersiapkan unggahan...", chat_id=chat_id, message_id=message_id)
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd, stderr=stderr.decode())
 
-        status_message = await client.get_messages(chat_id, message_id)
+        await try_call(
+            client.edit_message_text,
+            chat_id=chat_id, message_id=message_id, text="⏳ (2/3) Mempersiapkan unggahan..."
+        )
+        
+        file_size_mb = os.path.getsize(temp_output_path) / (1024 * 1024)
+        if file_size_mb > 49.5:
+            await try_call(
+                client.edit_message_text,
+                chat_id=chat_id, message_id=message_id,
+                text=f"❌ **Gagal:** File terlalu besar ({file_size_mb:.2f} MB)."
+            )
+            return
+
+        status_message = await try_call(
+            client.get_messages,
+            chat_id,
+            message_id
+        )
         p_args = {"client": client, "message": status_message, "last_update": 0, "start_time": time.time()}
-        await client.send_video(
-            chat_id, video=temp_output_path, caption="✅ Selesai!",
-            supports_streaming=True, progress=upload_progress, progress_args=(p_args,))
-        await client.delete_messages(chat_id, message_id)
+        
+        # === PERUBAHAN UTAMA: Gunakan wrapper untuk send_video ===
+        await try_call(
+            client.send_video,
+            chat_id=chat_id,
+            video=temp_output_path,
+            caption="✅ Selesai!",
+            supports_streaming=True,
+            progress=upload_progress,
+            progress_args=(p_args,)
+        )
+        
+        await try_call(client.delete_messages, chat_id, message_id)
+
     except Exception as e:
         error_text = f"❌ Terjadi kesalahan:\n`{str(e)[:300]}`"
-        try: await client.edit_message_text(text=error_text, chat_id=chat_id, message_id=message_id)
-        except: await client.send_message(chat_id, error_text)
+        try:
+            await try_call(client.edit_message_text, chat_id=chat_id, message_id=message_id, text=error_text)
+        except:
+            await try_call(client.send_message, chat_id, error_text)
+            
     finally:
-        if os.path.exists(temp_output_path): os.remove(temp_output_path)
+        if os.path.exists(temp_output_path):
+            os.remove(temp_output_path)
 
 
 def get_link_type(url):

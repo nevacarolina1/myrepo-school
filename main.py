@@ -24,133 +24,108 @@ oppa = OppaDrama()
 user_session_data = {}
 
 # --- Fungsi Helper (dengan pengecekan 50MB) ---
-async def progress(current, total, p_args):
-    """Callback untuk menampilkan progress upload."""
-    
-    # "Bongkar" dictionary p_args yang kita kirim
-    client = p_args["client"]
-    message = p_args["message"]
-    last_update = p_args["last_update"]
-    
+async def upload_progress(current, total, p_args):
+    # ... (fungsi ini tidak berubah)
+    client, message, last_update = p_args["client"], p_args["message"], p_args["last_update"]
     now = time.time()
-    
-    # Jeda 2 detik untuk menghindari FloodWait
     if now - last_update > 2.0:
-        # Update waktu di dalam dictionary agar tersimpan untuk pemanggilan berikutnya
         p_args["last_update"] = now
-        
         percentage = current * 100 / total
-        speed = current / (now - message.date.timestamp())
+        speed = current / (now - p_args["start_time"])
+        speed_str = f"{speed / 1024:.2f} KB/s" if speed < 1024*1024 else f"{speed / (1024*1024):.2f} MB/s"
+        try:
+            await client.edit_message_text(
+                chat_id=message.chat.id, message_id=message.id,
+                text=f"⏳ Mengunggah...\n`[{'=' * int(percentage / 5):20}]` {percentage:.1f}% | {speed_str}")
+        except: pass
+
+# === GANTI FUNGSI INI ===
+async def download_progress_callback(client, message, finished, total, downloaded_bytes, start_time):
+    """Fungsi yang akan dipanggil oleh download_filelions untuk update status."""
+    now = time.time()
+    last_edit_time = getattr(download_progress_callback, 'last_edit_time', 0)
+
+    if now - last_edit_time > 2.0:
+        setattr(download_progress_callback, 'last_edit_time', now)
         
-        if speed > 1024 * 1024:
-            speed_str = f"{speed / (1024 * 1024):.2f} MB/s"
-        else:
-            speed_str = f"{speed / 1024:.2f} KB/s"
+        if total == 0: return # Hindari pembagian dengan nol jika total segmen belum diketahui
+
+        percentage = finished * 100 / total
+        elapsed = now - start_time
+        speed = (downloaded_bytes / (1024*1024)) / elapsed if elapsed > 0 else 0
+        
+        # --- BLOK BARU: Perhitungan ETA ---
+        eta_str = "..." # Default string saat ETA belum bisa dihitung
+        if speed > 0 and finished > 0:
+            # 1. Hitung rata-rata ukuran per segmen
+            avg_segment_size = downloaded_bytes / finished
+            # 2. Estimasi total ukuran file
+            estimated_total_size = avg_segment_size * total
+            # 3. Hitung sisa data yang perlu diunduh
+            remaining_bytes = max(0, estimated_total_size - downloaded_bytes)
+            # 4. Hitung estimasi waktu sisa dalam detik
+            speed_in_bytes_per_sec = speed * 1024 * 1024
+            if speed_in_bytes_per_sec > 0:
+                eta_seconds = remaining_bytes / speed_in_bytes_per_sec
+                # 5. Format menjadi jam:menit:detik
+                eta_str = str(datetime.timedelta(seconds=int(eta_seconds)))
+        # --- AKHIR BLOK BARU ---
         
         try:
+            # Tambahkan ETA ke dalam string output
             await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=message.id,
                 text=(
-                    f"⏳ Mengunggah...\n"
+                    f"⏳ (1/3) Mengunduh...\n"
                     f"`[{'=' * int(percentage / 5):20}]`\n"
-                    f"{percentage:.1f}% | {speed_str}"
+                    f"{percentage:.1f}% | {speed:.2f} MB/s | ETA: {eta_str}"
                 )
             )
-        except FloodWait as e:
-            # Jika masih kena FloodWait, tunggu
-            print(f"Progress bar terkena FloodWait, menunggu {e.value} detik...")
-            await asyncio.sleep(e.value)
-        except:
-            pass # Abaikan error lain pada progress bar
+        except (MessageNotModified, FloodWait):
+            pass
+        except Exception as e:
+            print(f"Error di download_progress_callback: {e}")
 
 async def process_and_send_video(client, chat_id, message_id, m3u8_url):
-    timestamp = int(time.time())
-    temp_output_path = f"out_{timestamp}.mp4" 
-    
+    # ... (fungsi ini tidak berubah)
+    temp_output_path = f"out_{int(time.time())}.mp4"
     try:
-        await client.edit_message_text(
-            chat_id=chat_id, 
-            message_id=message_id, 
-            text=f"⏳ (1/3) Mengunduh..."
+        loading_message = await client.get_messages(chat_id, message_id)
+        dl_progress = lambda f, t, b, st: asyncio.create_task(
+            download_progress_callback(client, loading_message, f, t, b, st)
         )
-        
-        # Panggil FFmpeg sebagai sub-proses
-        ffmpeg_cmd = [
-            'ffmpeg', '-y', '-i', 'pipe:0', '-c', 'copy', 
-            '-movflags', '+faststart', temp_output_path
-        ]
+        ffmpeg_cmd = ['ffmpeg', '-y', '-i', 'pipe:0', '-c', 'copy', '-movflags', '+faststart', temp_output_path]
         process = await asyncio.create_subprocess_exec(
-            *ffmpeg_cmd, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        
-        # === PERUBAHAN UTAMA: KONSUMSI GENERATOR ===
-        # Panggil download_filelions dan loop melalui setiap chunk yang di-yield
+            *ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         download_generator = await asyncio.to_thread(
-            oppa.download_filelions,
-            m3u8_url,
-            max_workers=4
-        )
-
+            oppa.download_filelions, m3u8_url, max_workers=8, progress_callback=dl_progress)
         for video_chunk in download_generator:
             try:
-                # Tulis setiap chunk langsung ke stdin FFmpeg
                 process.stdin.write(video_chunk)
-                await process.stdin.drain() # Tunggu sampai buffer siap menerima data lagi
-            except (BrokenPipeError, ConnectionResetError):
-                # FFmpeg mungkin sudah selesai atau crash, hentikan penulisan
-                break
-        
-        # Tutup stdin untuk memberitahu FFmpeg bahwa tidak ada data lagi
-        if not process.stdin.is_closing():
-            process.stdin.close()
-        
-        # Tunggu FFmpeg selesai dan dapatkan hasilnya
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError): break
+        if not process.stdin.is_closing(): process.stdin.close()
         stdout, stderr = await process.communicate()
-        
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd, stderr=stderr.decode())
-
-        # --- Akhir Perubahan ---
-
-        await client.edit_message_text(
-            chat_id=chat_id, 
-            message_id=message_id,
-            text=f"⏳ (2/3) Mengunggah..."
-        )
-        
-        # Sisanya sama...
+        if process.returncode != 0: raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd, stderr=stderr.decode())
+        await client.edit_message_text(text="⏳ (2/3) Mempersiapkan unggahan...", chat_id=chat_id, message_id=message_id)
+        file_size_mb = os.path.getsize(temp_output_path) / (1024 * 1024)
+        if file_size_mb > 49.5:
+            await client.edit_message_text(f"❌ **Gagal:** File terlalu besar ({file_size_mb:.2f} MB). Batas bot adalah 50 MB.", chat_id, message_id)
+            return
         status_message = await client.get_messages(chat_id, message_id)
-        start_time = time.time()
-        p_args = {"client": client, "message": status_message, "last_update": 0}
+        p_args = {"client": client, "message": status_message, "last_update": 0, "start_time": time.time()}
         await client.send_video(
-            chat_id, 
-            video=temp_output_path, 
-            caption="✅ Selesai!", 
-            supports_streaming=True, 
-            progress=progress, 
-            progress_args=(p_args,)
-        )
+            chat_id, video=temp_output_path, caption="✅ Selesai!",
+            supports_streaming=True, progress=upload_progress, progress_args=(p_args,))
         await client.delete_messages(chat_id, message_id)
-
-    except subprocess.CalledProcessError as e:
-        error_log = f"FFmpeg gagal.\nError: {e.stderr}"
-        await client.edit_message_text(
-            chat_id=chat_id, 
-            message_id=message_id, 
-            text=f"❌ Kesalahan saat memproses video: `{error_log[:300]}`"
-        )
     except Exception as e:
-        await client.edit_message_text(
-            chat_id=chat_id, 
-            message_id=message_id,
-            text=f"❌ Kesalahan: `{e}`"
-        )
-            
+        error_text = f"❌ Terjadi kesalahan:\n`{str(e)[:300]}`"
+        try: await client.edit_message_text(text=error_text, chat_id=chat_id, message_id=message_id)
+        except: await client.send_message(chat_id, error_text)
     finally:
-        if os.path.exists(temp_output_path):
-            os.remove(temp_output_path)
+        if os.path.exists(temp_output_path): os.remove(temp_output_path)
+
 
 def get_link_type(url):
     try: return f"{url.strip().rstrip('/').split('-')[-1].capitalize()}"

@@ -149,15 +149,6 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
             client.edit_message_text,
             chat_id=chat_id, message_id=message_id, text="⏳ (2/3) Mempersiapkan unggahan..."
         )
-        
-        file_size_mb = os.path.getsize(temp_output_path) / (1024 * 1024)
-        if file_size_mb > 49.5:
-            await try_call(
-                client.edit_message_text,
-                chat_id=chat_id, message_id=message_id,
-                text=f"❌ **Gagal:** File terlalu besar ({file_size_mb:.2f} MB)."
-            )
-            return
 
         status_message = await try_call(
             client.get_messages,

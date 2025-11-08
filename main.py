@@ -88,7 +88,7 @@ async def download_progress_callback(client, message, finished, total, downloade
         except Exception as e:
             print(f"Error di download_progress_callback: {e}")
             
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
 
 async def process_and_send_video(client, chat_id, message_id, m3u8_url):
     # ... (fungsi ini tidak berubah)

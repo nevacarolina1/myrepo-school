@@ -90,7 +90,7 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
         download_generator = await asyncio.to_thread(
             oppa.download_filelions,
             m3u8_url,
-            max_workers=16
+            max_workers=4
         )
 
         for video_chunk in download_generator:

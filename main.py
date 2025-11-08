@@ -211,7 +211,7 @@ async def callback_handler(client, callback_query):
         await callback_query.message.edit("<b>Pilih resolusi untuk diunduh:</b>", reply_markup=markup)
 
     elif data.startswith("dl_m3u8_"): 
-        chat_id = callback_query.message.chat_id
+        chat_id = callback_query.message.chat.id
         await callback_query.message.delete()
         loading_msg = await client.send_message(chat_id, "⏳ Mempersiapkan unduhan...")
         try:

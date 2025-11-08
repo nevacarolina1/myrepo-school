@@ -40,8 +40,6 @@ async def upload_progress(current, total, p_args):
                 text=f"⏳ Mengunggah...\n`[{'=' * int(percentage / 5):20}]` {percentage:.1f}% | {speed_str}")
         except: pass
 
-    await asyncio.sleep(5)
-
 # === GANTI FUNGSI INI ===
 async def download_progress_callback(client, message, finished, total, downloaded_bytes, start_time):
     """Fungsi yang akan dipanggil oleh download_filelions untuk update status."""
@@ -90,7 +88,7 @@ async def download_progress_callback(client, message, finished, total, downloade
         except Exception as e:
             print(f"Error di download_progress_callback: {e}")
             
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
 
 async def process_and_send_video(client, chat_id, message_id, m3u8_url):
     # ... (fungsi ini tidak berubah)

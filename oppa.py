@@ -230,16 +230,15 @@ class OppaDrama:
         m3u8_data = m3u8.loads(res_text).segments
         return m3u8_data
 
-    def download_filelions(self, url: str, max_workers: int = 16) -> bytes: 
+    def download_filelions(self, url: str, max_workers: int = 16, progress_callback=None) -> bytes: 
         segments = self.m3u8_filelions(url)
+        if not segments: 
+            raise ValueError("Gagal mendapatkan daftar segmen.")
 
         total_segments = len(segments)
+        
         start_time = time.time()
-
         total_bytes, finished_segments, next_segment_to_yield = 0, 0, 0
-        results = [None] * total_segments
-        total_bytes = 0
-        finished_segments = 0
         lock, segment_buffer = threading.Lock(), {}
 
         # Flag untuk memberitahu thread jika terjadi error fatal
@@ -319,6 +318,11 @@ class OppaDrama:
                             f"ETA: {eta_str}",
                             end='\r'
                         )
+                else: 
+                    if progress_callback:
+                        with lock:
+                            progress_callback(finished_segments, total_segments, total_bytes, start_time)
+                    time.sleep(0.1) # Jeda singkat
 
         finally:
             print("\nProses selesai, membersihkan resources...".ljust(120))

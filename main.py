@@ -100,7 +100,7 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
         process = await asyncio.create_subprocess_exec(
             *ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         download_generator = await asyncio.to_thread(
-            oppa.download_filelions, m3u8_url, max_workers=1, progress_callback=dl_progress)
+            oppa.download_filelions, m3u8_url, max_workers=4, progress_callback=dl_progress)
         for video_chunk in download_generator:
             try:
                 process.stdin.write(video_chunk)
@@ -110,10 +110,7 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
         stdout, stderr = await process.communicate()
         if process.returncode != 0: raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd, stderr=stderr.decode())
         await client.edit_message_text(text="⏳ (2/3) Mempersiapkan unggahan...", chat_id=chat_id, message_id=message_id)
-        file_size_mb = os.path.getsize(temp_output_path) / (1024 * 1024)
-        if file_size_mb > 49.5:
-            await client.edit_message_text(f"❌ **Gagal:** File terlalu besar ({file_size_mb:.2f} MB). Batas bot adalah 50 MB.", chat_id, message_id)
-            return
+
         status_message = await client.get_messages(chat_id, message_id)
         p_args = {"client": client, "message": status_message, "last_update": 0, "start_time": time.time()}
         await client.send_video(

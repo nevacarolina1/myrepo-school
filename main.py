@@ -129,7 +129,7 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
         )
         
         download_generator = await asyncio.to_thread(
-            oppa.download_filelions, m3u8_url, max_workers=8, progress_callback=dl_progress
+            oppa.download_filelions, m3u8_url, max_workers=4, progress_callback=dl_progress
         )
 
         # Mengalirkan data ke FFmpeg

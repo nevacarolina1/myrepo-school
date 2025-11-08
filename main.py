@@ -210,15 +210,16 @@ async def callback_handler(client, callback_query):
         markup = InlineKeyboardMarkup([buttons, [InlineKeyboardButton("⬅️ Kembali", callback_data=f"getlinks_{session['current_link_index']}")]])
         await callback_query.message.edit("<b>Pilih resolusi untuk diunduh:</b>", reply_markup=markup)
 
-    elif data.startswith("dl_m3u8_"):
+    elif data.startswith("dl_m3u8_"): 
+        chat_id = callback_query.message.chat_id
         await callback_query.message.delete()
-        loading_msg = await client.send_message(user_id, "⏳ Mempersiapkan unduhan...")
+        loading_msg = await client.send_message(chat_id, "⏳ Mempersiapkan unduhan...")
         try:
             m3u8_index = int(data.split('_')[-1])
             m3u8_url = session['m3u8_list'][m3u8_index]['url']
         except (KeyError, IndexError, ValueError):
             return await loading_msg.edit("❌ Sesi tidak valid. Coba lagi.")
-        asyncio.create_task(process_and_send_video(client, user_id, loading_msg.id, m3u8_url))
+        asyncio.create_task(process_and_send_video(client, chat_id, loading_msg.id, m3u8_url))
 
     await callback_query.answer()
 

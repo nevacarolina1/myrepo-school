@@ -24,6 +24,9 @@ oppa = OppaDrama()
 
 user_session_data = {}
 
+# === VARIABEL BARU UNTUK SISTEM ANTRIAN ===
+IS_DOWNLOAD_IN_PROGRESS = False
+
 # === FUNGSI BARU UNTUK MENANGANI FLOODWAIT SECARA OTOMATIS ===
 async def try_call(func, *args, **kwargs):
     """
@@ -109,6 +112,7 @@ async def download_progress_callback(client, message, finished, total, downloade
         await asyncio.sleep(5)
 
 async def process_and_send_video(client, chat_id, message_id, m3u8_url):
+    global IS_DOWNLOAD_IN_PROGRESS # Deklarasikan bahwa kita akan mengubah variabel global
     temp_output_path = f"out_{int(time.time())}.mp4"
     
     try:
@@ -177,7 +181,12 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
         except:
             await try_call(client.send_message, chat_id, error_text)
             
-    finally:
+    finally: 
+        # === BUKA KUNCI DI SINI ===
+        # Blok ini selalu berjalan, baik sukses maupun gagal
+        IS_DOWNLOAD_IN_PROGRESS = False
+        print("[INFO] Status antrian direset. Bot siap untuk tugas berikutnya.")
+        
         if os.path.exists(temp_output_path):
             os.remove(temp_output_path)
 
@@ -210,7 +219,9 @@ async def search_handler(client, message):
     await status_msg.edit(f"Hasil pencarian untuk '{query}':", reply_markup=markup)
 
 @app.on_callback_query()
-async def callback_handler(client, callback_query):
+async def callback_handler(client, callback_query): 
+    global IS_DOWNLOAD_IN_PROGRESS
+    
     user_id = callback_query.from_user.id
     data = callback_query.data
     
@@ -268,6 +279,16 @@ async def callback_handler(client, callback_query):
         await callback_query.message.edit("<b>Pilih resolusi untuk diunduh:</b>", reply_markup=markup)
 
     elif data.startswith("dl_m3u8_"): 
+        # === CEK ANTRIAN DI SINI ===
+        if IS_DOWNLOAD_IN_PROGRESS:
+            return await callback_query.answer(
+                "Bot sedang sibuk memproses unduhan lain.\nHarap tunggu hingga selesai.",
+                show_alert=True
+            )
+
+        # === KUNCI ANTRIAN ===
+        IS_DOWNLOAD_IN_PROGRESS = True
+        
         chat_id = callback_query.message.chat.id
         await callback_query.message.delete()
         loading_msg = await client.send_message(chat_id, "⏳ Mempersiapkan unduhan...")
@@ -275,7 +296,10 @@ async def callback_handler(client, callback_query):
             m3u8_index = int(data.split('_')[-1])
             m3u8_url = session['m3u8_list'][m3u8_index]['url']
         except (KeyError, IndexError, ValueError):
-            return await loading_msg.edit("❌ Sesi tidak valid. Coba lagi.")
+            await loading_msg.edit("❌ Sesi tidak valid. Coba lagi.")
+            IS_DOWNLOAD_IN_PROGRESS = False 
+            return
+            
         asyncio.create_task(process_and_send_video(client, chat_id, loading_msg.id, m3u8_url))
 
     await callback_query.answer()

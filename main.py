@@ -143,7 +143,8 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
                 await process.stdin.drain()
             except (BrokenPipeError, ConnectionResetError): break
         
-        if not process.stdin.is_closing(): process.stdin.close()
+        if not process.stdin.is_closing(): 
+            process.stdin.close()
         
         stdout, stderr = await process.communicate()
         if process.returncode != 0:
@@ -151,14 +152,56 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
 
         await try_call(
             client.edit_message_text,
-            chat_id=chat_id, message_id=message_id, text="⏳ (2/3) Mempersiapkan unggahan..."
+            chat_id=chat_id, 
+            message_id=message_id, 
+            text="⏳ (2/3) Mendapatkan Info Video..."
         )
 
-        status_message = await try_call(
-            client.get_messages,
-            chat_id,
-            message_id
+        ffprobe_cmd = [
+            'ffprobe',
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format',
+            '-show_streams',
+            temp_output_path
+        ]
+
+        process_probe = await asyncio.create_subprocess_exec(
+            *ffprobe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
+        
+        stdout_probe, stderr_probe = await process_probe.communicate()
+        if process_probe.returncode != 0:
+            raise subprocess.CalledProcessError(process_probe.returncode, ffprobe_cmd, stderr=stderr_probe.decode())
+
+        # Parsing output JSON dari ffprobe
+        metadata = json.loads(stdout_probe)
+        video_stream = next((s for s in metadata.get('streams', []) if s.get('codec_type') == 'video'), None)
+        
+        # Ekstrak detail video
+        file_size_mb = os.path.getsize(temp_output_path) / (1024 * 1024)
+        duration_sec = float(video_stream.get('duration', '0'))
+        duration_str = time.strftime('%H:%M:%S', time.gmtime(duration_sec))
+        width = video_stream.get('width', 'N/A')
+        height = video_stream.get('height', 'N/A')
+        resolution_str = f"{width}x{height}" if width != 'N/A' else "N/A"
+        
+        # Buat caption yang informatif
+        caption_text = (
+            f"✅ **Selesai!**\n\n"
+            f"📁 **Ukuran File:** {file_size_mb:.2f} MB\n"
+            f"⏱️ **Durasi:** {duration_str}\n"
+            f"🖥️ **Resolusi:** {resolution_str}"
+        )
+
+        await try_call(
+            client.edit_message_text,
+            chat_id=chat_id, message_id=message_id, text="⏳ (3/3) Mengunggah ke Telegram..."
+        )
+
+        status_message = await try_call(client.get_messages, chat_id, message_id)
+        
+        
         p_args = {"client": client, "message": status_message, "last_update": 0, "start_time": time.time()}
         
         # === PERUBAHAN UTAMA: Gunakan wrapper untuk send_video ===
@@ -166,8 +209,11 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
             client.send_video,
             chat_id=chat_id,
             video=temp_output_path,
-            caption="✅ Selesai!",
+            caption=caption_text, # <<< Gunakan caption baru
             supports_streaming=True,
+            duration=int(duration_sec), # <<< Beri tahu Telegram durasi video
+            width=width,               # <<< Beri tahu Telegram resolusi video
+            height=height,
             progress=upload_progress,
             progress_args=(p_args,)
         )
@@ -257,6 +303,7 @@ async def callback_handler(client, callback_query):
         target_url = session['current_movie_links'][link_index]
         mv_details_obj = await asyncio.to_thread(oppa.movie_details, target_url)
         json_data = mv_details_obj.json()
+        session['m3u8_title'] = json_data.get('title') 
 
         buttons = []
         for server in json_data.get('streaming_servers', []):
@@ -295,12 +342,13 @@ async def callback_handler(client, callback_query):
         try:
             m3u8_index = int(data.split('_')[-1])
             m3u8_url = session['m3u8_list'][m3u8_index]['url']
+            m3u8_title = session.get('m3u8_title', "Video Tanpa Judul")
         except (KeyError, IndexError, ValueError):
             await loading_msg.edit("❌ Sesi tidak valid. Coba lagi.")
             IS_DOWNLOAD_IN_PROGRESS = False 
             return
             
-        asyncio.create_task(process_and_send_video(client, chat_id, loading_msg.id, m3u8_url))
+        asyncio.create_task(process_and_send_video(client, chat_id, loading_msg.id, m3u8_url, m3u8_title))
 
     await callback_query.answer()
 

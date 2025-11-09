@@ -109,7 +109,7 @@ async def download_progress_callback(client, message, finished, total, downloade
         except Exception as e:
             print(f"Error di download_progress_callback: {e}")
             
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
 
 async def process_and_send_video(client, chat_id, message_id, m3u8_url, movie_title):
     global IS_DOWNLOAD_IN_PROGRESS # Deklarasikan bahwa kita akan mengubah variabel global

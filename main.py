@@ -111,7 +111,7 @@ async def download_progress_callback(client, message, finished, total, downloade
             
         await asyncio.sleep(5)
 
-async def process_and_send_video(client, chat_id, message_id, m3u8_url):
+async def process_and_send_video(client, chat_id, message_id, m3u8_url, movie_title):
     global IS_DOWNLOAD_IN_PROGRESS # Deklarasikan bahwa kita akan mengubah variabel global
     temp_output_path = f"out_{int(time.time())}.mp4"
     
@@ -188,6 +188,7 @@ async def process_and_send_video(client, chat_id, message_id, m3u8_url):
         
         # Buat caption yang informatif
         caption_text = (
+            f"🎬 **{movie_title}**\n\n"
             f"✅ **Selesai!**\n\n"
             f"📁 **Ukuran File:** {file_size_mb:.2f} MB\n"
             f"⏱️ **Durasi:** {duration_str}\n"
